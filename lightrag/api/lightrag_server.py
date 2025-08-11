@@ -353,25 +353,59 @@ def create_app(args):
     # Configure rerank function if model and API are configured
     rerank_model_func = None
     if args.rerank_binding_api_key and args.rerank_binding_host:
-        from lightrag.rerank import custom_rerank
+        # Import all rerank functions
+        from lightrag.rerank import custom_rerank, jina_rerank, cohere_rerank, qwen3_rerank
 
         async def server_rerank_func(
             query: str, documents: list, top_n: int = None, **kwargs
         ):
-            """Server rerank function with configuration from environment variables"""
-            return await custom_rerank(
-                query=query,
-                documents=documents,
-                model=args.rerank_model,
-                base_url=args.rerank_binding_host,
-                api_key=args.rerank_binding_api_key,
-                top_n=top_n,
-                **kwargs,
-            )
+            """Server rerank function with provider-specific configuration"""
+            
+            if args.rerank_provider == "jina":
+                return await jina_rerank(
+                    query=query,
+                    documents=documents,
+                    model=args.rerank_model,
+                    base_url=args.rerank_binding_host,
+                    api_key=args.rerank_binding_api_key,
+                    top_n=top_n,
+                    **kwargs,
+                )
+            elif args.rerank_provider == "cohere":
+                return await cohere_rerank(
+                    query=query,
+                    documents=documents,
+                    model=args.rerank_model,
+                    base_url=args.rerank_binding_host,
+                    api_key=args.rerank_binding_api_key,
+                    top_n=top_n,
+                    **kwargs,
+                )
+            elif args.rerank_provider == "qwen3":
+                return await qwen3_rerank(
+                    query=query,
+                    documents=documents,
+                    model=args.rerank_model,
+                    base_url=args.rerank_binding_host,
+                    api_key=args.rerank_binding_api_key,
+                    instruction=args.qwen3_rerank_instruction,
+                    top_n=top_n,
+                    **kwargs,
+                )
+            else:  # Default to custom_rerank for backward compatibility
+                return await custom_rerank(
+                    query=query,
+                    documents=documents,
+                    model=args.rerank_model,
+                    base_url=args.rerank_binding_host,
+                    api_key=args.rerank_binding_api_key,
+                    top_n=top_n,
+                    **kwargs,
+                )
 
         rerank_model_func = server_rerank_func
         logger.info(
-            f"Rerank model configured: {args.rerank_model} (can be enabled per query)"
+            f"Rerank model configured: {args.rerank_model} with provider '{args.rerank_provider}' (can be enabled per query)"
         )
     else:
         logger.info(
@@ -579,6 +613,9 @@ def create_app(args):
                     "max_graph_nodes": args.max_graph_nodes,
                     # Rerank configuration (based on whether rerank model is configured)
                     "enable_rerank": rerank_model_func is not None,
+                    "rerank_provider": args.rerank_provider
+                    if rerank_model_func is not None
+                    else None,
                     "rerank_model": args.rerank_model
                     if rerank_model_func is not None
                     else None,

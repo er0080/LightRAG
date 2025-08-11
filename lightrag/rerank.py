@@ -278,6 +278,174 @@ async def cohere_rerank(
     )
 
 
+async def qwen3_rerank(
+    query: str,
+    documents: List[Dict[str, Any]],
+    model: str = "Qwen/Qwen3-Reranker-0.6B",
+    top_n: Optional[int] = None,
+    base_url: str = "http://localhost:8000/v1/score",
+    api_key: Optional[str] = None,
+    instruction: str = "Given a web search query, retrieve relevant passages that answer the query",
+    **kwargs,
+) -> List[Dict[str, Any]]:
+    """
+    Rerank documents using Qwen3 Reranker via vLLM's OpenAI-compatible API.
+
+    Args:
+        query: The search query
+        documents: List of documents to rerank
+        model: Qwen3 reranker model name
+        top_n: Number of top results to return
+        base_url: vLLM API endpoint (should end with /v1/score)
+        api_key: API key if required
+        instruction: The instruction for the reranking task
+        **kwargs: Additional parameters
+
+    Returns:
+        List of reranked documents with relevance scores
+    """
+    if not documents:
+        return documents
+
+    # Qwen3 Reranker prompt templates from vLLM documentation
+    prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+    suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+    
+    query_template = "{prefix}<Instruct>: {instruction}\n<Query>: {query}\n"
+    document_template = "<Document>: {doc}{suffix}"
+
+    # Prepare documents for reranking
+    prepared_docs = []
+    for doc in documents:
+        if isinstance(doc, dict):
+            text = doc.get("content") or doc.get("text") or str(doc)
+        else:
+            text = str(doc)
+        prepared_docs.append(text)
+
+    # Format query according to Qwen3 template
+    formatted_query = query_template.format(
+        prefix=prefix, 
+        instruction=instruction, 
+        query=query
+    )
+    
+    # Format documents according to Qwen3 template
+    formatted_documents = [
+        document_template.format(doc=doc, suffix=suffix) 
+        for doc in prepared_docs
+    ]
+
+    # Prepare request headers
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    # Prepare request data for vLLM's scoring endpoint
+    data = {
+        "model": model,
+        "text_1": [formatted_query] * len(formatted_documents),
+        "text_2": formatted_documents,
+        **kwargs
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(base_url, headers=headers, json=data) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"Qwen3 rerank API error {response.status}: {error_text}")
+                    return documents
+
+                result = await response.json()
+
+                # Extract scores from vLLM response
+                if "data" in result:
+                    scores = []
+                    for item in result["data"]:
+                        if "score" in item:
+                            scores.append(item["score"])
+                        else:
+                            logger.warning("Score not found in response item")
+                            scores.append(0.0)
+                else:
+                    logger.warning("Unexpected vLLM API response format")
+                    return documents
+
+                # Combine documents with their scores
+                doc_scores = list(zip(documents, scores))
+                
+                # Sort by relevance score (higher is better)
+                doc_scores.sort(key=lambda x: x[1], reverse=True)
+                
+                # Apply top_n limit if specified
+                if top_n is not None:
+                    doc_scores = doc_scores[:top_n]
+
+                # Add rerank scores to documents
+                reranked_docs = []
+                for doc, score in doc_scores:
+                    reranked_doc = doc.copy() if isinstance(doc, dict) else {"content": str(doc)}
+                    reranked_doc["rerank_score"] = score
+                    reranked_docs.append(reranked_doc)
+
+                return reranked_docs
+
+    except Exception as e:
+        logger.error(f"Error during Qwen3 reranking: {e}")
+        return documents
+
+
+def create_qwen3_rerank_model(
+    model: str = "Qwen/Qwen3-Reranker-0.6B",
+    base_url: str = "http://localhost:8000/v1/score",
+    api_key: Optional[str] = None,
+    instruction: str = "Given a web search query, retrieve relevant passages that answer the query",
+    **kwargs
+) -> RerankModel:
+    """
+    Create a RerankModel configured for Qwen3 Reranker via vLLM API.
+    
+    Args:
+        model: Qwen3 reranker model name
+        base_url: vLLM API endpoint (should end with /v1/score)
+        api_key: API key if required
+        instruction: The instruction for the reranking task
+        **kwargs: Additional parameters
+    
+    Returns:
+        Configured RerankModel instance
+    
+    Example usage:
+    ```python
+    from lightrag.rerank import create_qwen3_rerank_model
+    from lightrag import LightRAG
+
+    # Create Qwen3 rerank model
+    rerank_model = create_qwen3_rerank_model(
+        base_url="http://your-vllm-server:8000/v1/score",
+        api_key="your-api-key-if-needed"
+    )
+
+    # Use in LightRAG
+    rag = LightRAG(
+        rerank_model_func=rerank_model.rerank,
+        # ... other configurations
+    )
+    ```
+    """
+    return RerankModel(
+        rerank_func=qwen3_rerank,
+        kwargs={
+            "model": model,
+            "base_url": base_url,
+            "api_key": api_key,
+            "instruction": instruction,
+            **kwargs
+        }
+    )
+
+
 # Convenience function for custom API endpoints
 async def custom_rerank(
     query: str,
@@ -316,9 +484,35 @@ if __name__ == "__main__":
 
         query = "What is the capital of France?"
 
+        # Test Jina reranker
+        print("Testing Jina reranker...")
         result = await jina_rerank(
             query=query, documents=docs, top_n=2, api_key="your-api-key-here"
         )
-        print(result)
+        print("Jina result:", result)
+
+        # Test Qwen3 reranker
+        print("\nTesting Qwen3 reranker...")
+        qwen3_result = await qwen3_rerank(
+            query=query, 
+            documents=docs, 
+            top_n=2,
+            base_url="http://localhost:8000/v1/score",
+            api_key="your-api-key-if-needed"  # Optional
+        )
+        print("Qwen3 result:", qwen3_result)
+
+        # Test with RerankModel wrapper
+        print("\nTesting with RerankModel wrapper...")
+        qwen3_model = create_qwen3_rerank_model(
+            base_url="http://localhost:8000/v1/score",
+            api_key="your-api-key-if-needed"
+        )
+        wrapper_result = await qwen3_model.rerank(
+            query=query,
+            documents=docs,
+            top_n=2
+        )
+        print("RerankModel wrapper result:", wrapper_result)
 
     asyncio.run(main())

@@ -365,9 +365,16 @@ def parse_args() -> argparse.Namespace:
     args.jwt_algorithm = get_env_value("JWT_ALGORITHM", "HS256")
 
     # Rerank model configuration
+    args.rerank_provider = get_env_value("RERANK_PROVIDER", "custom")
     args.rerank_model = get_env_value("RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
     args.rerank_binding_host = get_env_value("RERANK_BINDING_HOST", None)
     args.rerank_binding_api_key = get_env_value("RERANK_BINDING_API_KEY", None)
+    
+    # Qwen3-specific rerank configuration
+    args.qwen3_rerank_instruction = get_env_value(
+        "QWEN3_RERANK_INSTRUCTION", 
+        "Given a web search query, retrieve relevant passages that answer the query"
+    )
 
     # Min rerank score configuration
     args.min_rerank_score = get_env_value(
