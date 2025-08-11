@@ -1747,6 +1747,31 @@ async def apply_rerank_if_enabled(
         if reranked_docs and len(reranked_docs) > 0:
             if len(reranked_docs) > top_n:
                 reranked_docs = reranked_docs[:top_n]
+            
+            # Debug logging: Display top 10 reranker scores with document previews
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("=== RERANK RESULTS ===")
+                logger.debug(f"Query: {query}")
+                logger.debug(f"Total reranked documents: {len(reranked_docs)}")
+                
+                # Show top 10 results
+                top_10_docs = reranked_docs[:10]
+                for i, doc in enumerate(top_10_docs, 1):
+                    score = doc.get("rerank_score", "N/A")
+                    content = doc.get("content", "")
+                    if not content:
+                        # Try alternative content fields
+                        content = doc.get("text", "") or str(doc)
+                    
+                    # Get first 100 bytes of content
+                    preview = content[:100] if content else "[No content]"
+                    if len(content) > 100:
+                        preview += "..."
+                    
+                    logger.debug(f"  {i:2d}. Score: {score:.4f} | Preview: {preview}")
+                
+                logger.debug("=====================")
+            
             logger.info(f"Successfully reranked: {len(retrieved_docs)} chunks")
             return reranked_docs
         else:
