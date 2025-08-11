@@ -1748,29 +1748,26 @@ async def apply_rerank_if_enabled(
             if len(reranked_docs) > top_n:
                 reranked_docs = reranked_docs[:top_n]
             
-            # Debug logging: Display top 10 reranker scores with document previews
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("=== RERANK RESULTS ===")
-                logger.debug(f"Query: {query}")
-                logger.debug(f"Total reranked documents: {len(reranked_docs)}")
+            # Debug logging: Display top 10 reranker scores with file paths
+            if logger.isEnabledFor(logging.INFO):
+                logger.info("=== RERANK RESULTS ===")
+                logger.info(f"Query: {query}")
+                logger.info(f"Total reranked documents: {len(reranked_docs)}")
                 
                 # Show top 10 results
                 top_10_docs = reranked_docs[:10]
                 for i, doc in enumerate(top_10_docs, 1):
                     score = doc.get("rerank_score", "N/A")
-                    content = doc.get("content", "")
-                    if not content:
-                        # Try alternative content fields
-                        content = doc.get("text", "") or str(doc)
                     
-                    # Get first 100 bytes of content
-                    preview = content[:100] if content else "[No content]"
-                    if len(content) > 100:
-                        preview += "..."
+                    # Debug: show all available keys for first document
+                    if i == 1:
+                        logger.info(f"Available document keys: {list(doc.keys())}")
                     
-                    logger.debug(f"  {i:2d}. Score: {score:.4f} | Preview: {preview}")
+                    file_path = doc.get("file_path", "Unknown")
+                    
+                    logger.info(f"  {i:2d}. Score: {score:.4f} | File: {file_path}")
                 
-                logger.debug("=====================")
+                logger.info("=====================")
             
             logger.info(f"Successfully reranked: {len(retrieved_docs)} chunks")
             return reranked_docs
