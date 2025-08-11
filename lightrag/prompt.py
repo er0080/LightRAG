@@ -9,19 +9,26 @@ PROMPTS["DEFAULT_TUPLE_DELIMITER"] = "<|>"
 PROMPTS["DEFAULT_RECORD_DELIMITER"] = "##"
 PROMPTS["DEFAULT_COMPLETION_DELIMITER"] = "<|COMPLETE|>"
 
-PROMPTS["DEFAULT_ENTITY_TYPES"] = ["organization", "person", "geo", "event", "category"]
+PROMPTS["DEFAULT_ENTITY_TYPES"] = ["Organization", "Person", "Geo", "Event", "Category", "Component", "Serial", "Model", "Equipment", "BSER", "Defect", "Report"]
 
 PROMPTS["DEFAULT_USER_PROMPT"] = "n/a"
 
 PROMPTS["entity_extraction"] = """---Goal---
-Given a text document that is potentially relevant to this activity and a list of entity types, identify all entities of those types from the text and all relationships among the identified entities.
-Use {language} as output language.
+Given a text document from the BITZER Scroll Engineering Database that is potentially relevant to this activity and a list of entity types, identify all entities of those types from the text and all relationships among the identified entities.
+Use {language} as output language.  Please note each document in the knowledgebase is called a BITZER Scroll Engineering Report (BSER), and is denoted with 7 characters ("BSER" + 3-digit number). The BSER number is usually found in the header block of each page. Only BSER entities shall be classified as entity type "BSER".
+.
+BITZER Scroll compressor serial numbers are always 10-digit numbers which usually begin with 27.  BITZER Scroll compressor model numbers are 14 characters, starting with either "GSD6" or "GSD8".
+
+BITZER uses several designators for test reports. Reports for tests conducted at Syracuse lab are 8-character designators comprising of 3 letters followed by 5 digits. These documents are called compressor test instructions (CTI). 
+Test reports for tests at Rottenburg lab are 7-character designators comprising of the letter "R" followed by six digits. All test report entities shall be classified as entity type "Report".
+
+BITZER uses specialized test equipment for testing compressors. In Syracuse, these are designated by two letters and a number. For example LS22, LS-41, LS12, LS-33, QS-1, FS-1, T20, T-40 etc. In Rottenburg, test equipment is designated by "TE" followed by a single digit.  Test equipment entities shall by classified as entity type "Equipment".
 
 ---Steps---
 1. Identify all entities. For each identified entity, extract the following information:
-- entity_name: Name of the entity, use same language as input text. If English, capitalized the name
+- entity_name: Name of the entity, use same language as input text. If English, capitalized the name.
 - entity_type: One of the following types: [{entity_types}]
-- entity_description: Provide a comprehensive description of the entity's attributes and activities *based solely on the information present in the input text*. **Do not infer or hallucinate information not explicitly stated.** If the text provides insufficient information to create a comprehensive description, state "Description not available in text."
+- entity_description: Comprehensive description of the entity's attributes and activities
 Format each entity as ("entity"{tuple_delimiter}<entity_name>{tuple_delimiter}<entity_type>{tuple_delimiter}<entity_description>)
 
 2. From the entities identified in step 1, identify all pairs of (source_entity, target_entity) that are *clearly related* to each other.
@@ -151,14 +158,14 @@ Output:
 """
 
 PROMPTS["entity_continue_extraction"] = """
-MANY entities and relationships were missed in the last extraction. Please find only the missing entities and relationships from previous text.
+MANY entities and relationships were missed in the last extraction.
 
 ---Remember Steps---
 
 1. Identify all entities. For each identified entity, extract the following information:
-- entity_name: Name of the entity, use same language as input text. If English, capitalized the name
+- entity_name: Name of the entity, use same language as input text. If English, capitalized the name.
 - entity_type: One of the following types: [{entity_types}]
-- entity_description: Provide a comprehensive description of the entity's attributes and activities *based solely on the information present in the input text*. **Do not infer or hallucinate information not explicitly stated.** If the text provides insufficient information to create a comprehensive description, state "Description not available in text."
+- entity_description: Comprehensive description of the entity's attributes and activities
 Format each entity as ("entity"{tuple_delimiter}<entity_name>{tuple_delimiter}<entity_type>{tuple_delimiter}<entity_description>)
 
 2. From the entities identified in step 1, identify all pairs of (source_entity, target_entity) that are *clearly related* to each other.
@@ -179,7 +186,7 @@ Format the content-level key words as ("content_keywords"{tuple_delimiter}<high_
 
 ---Output---
 
-Add new entities and relations below using the same format, and do not include entities and relations that have been previously extracted. :\n
+Add them below using the same format:\n
 """.strip()
 
 PROMPTS["entity_if_loop_extraction"] = """
@@ -198,7 +205,11 @@ PROMPTS["fail_response"] = (
 
 PROMPTS["rag_response"] = """---Role---
 
-You are a helpful assistant responding to user query about Knowledge Graph and Document Chunks provided in JSON format below.
+You are a helpful assistant working at BITZER Scroll Inc., responding to user queries about Knowledge Graph and Document Chunks provided in JSON format below. 
+
+Data contained in Knowledge Graph and Document Chunks have been extracted from the Bitzer Scroll Engineering Database (BSER), which represents the entire technical corpus of BITZER scroll expertise.
+
+BITZER Scroll Inc. is a scroll compressor OEM who designs, developes and manufactures advanced products for air conditioning and refrigeration markets.
 
 
 ---Goal---
@@ -225,7 +236,7 @@ When handling relationships with timestamps:
 - Ensure the response maintains continuity with the conversation history.
 - List up to 5 most important reference sources at the end under "References" section. Clearly indicating whether each source is from Knowledge Graph (KG) or Document Chunks (DC), and include the file path if available, in the following format: [KG/DC] file_path
 - If you don't know the answer, just say so.
-- Do not make anything up. Do not include information not provided by the Knowledge Base.
+- Do not make anything up. Only include information provided by the Knowledge Base, unless user asks to refine with your prior knowledge.
 - Additional user prompt: {user_prompt}
 
 Response:"""
@@ -241,6 +252,8 @@ Given the query and conversation history, list both high-level and low-level key
 ---Instructions---
 
 - Consider both the current query and relevant conversation history when extracting keywords
+- Please note that any explict reference to "Bitzer Scroll Engineering Report number 123" or "BSER123" or "BSER 123" (BSER with 3-digit number) should include "BSER123" and "BSER 123" in the resultant output keywords.
+- IMPORTANT! BSER keywords must include both "BSER123" and "BSER 123" variants (note the space!) as these entites were extracted in both formats randomly.
 - Output the keywords in JSON format, it will be parsed by a JSON parser, do not add any extra content in output
 - The JSON should have two keys:
   - "high_level_keywords" for overarching concepts or themes
@@ -251,7 +264,7 @@ Given the query and conversation history, list both high-level and low-level key
 ######################
 {examples}
 
-######################
+#############################
 ---Real Data---
 ######################
 Conversation History:
@@ -259,45 +272,62 @@ Conversation History:
 
 Current Query: {query}
 ######################
-The `Output` should be in JSON format, with no other text before and after the JSON. Use the same language as `Current Query`.
-
+The `Output` should be human text, not unicode characters. Keep the same language as `Query`.
 Output:
+
 """
 
 PROMPTS["keywords_extraction_examples"] = [
     """Example 1:
 
 Query: "How does international trade influence global economic stability?"
-
+################
 Output:
 {
   "high_level_keywords": ["International trade", "Global economic stability", "Economic impact"],
   "low_level_keywords": ["Trade agreements", "Tariffs", "Currency exchange", "Imports", "Exports"]
 }
-
-""",
+#############################""",
     """Example 2:
 
 Query: "What are the environmental consequences of deforestation on biodiversity?"
-
+################
 Output:
 {
   "high_level_keywords": ["Environmental consequences", "Deforestation", "Biodiversity loss"],
   "low_level_keywords": ["Species extinction", "Habitat destruction", "Carbon emissions", "Rainforest", "Ecosystem"]
 }
-
-""",
+#############################""",
     """Example 3:
 
 Query: "What is the role of education in reducing poverty?"
-
+################
 Output:
 {
   "high_level_keywords": ["Education", "Poverty reduction", "Socioeconomic development"],
   "low_level_keywords": ["School access", "Literacy rates", "Job training", "Income inequality"]
 }
+#############################""",
+    """Example 4:
 
-""",
+Query: "Please summarize BSER414"
+################
+Output:
+{
+  "high_level_keywords": ["BSER414.pdf", "BSER414", "BSER 414"],
+  "low_level_keywords": ["BSER414", "BSER 414"]
+}
+#############################""",
+    """Example 5:
+
+Query: "What can you tell me about Bitzer Scroll Engineering Report number 561?"
+################
+Output:
+{
+  "high_level_keywords": ["BSER561.pdf", "BSER561", "BSER 561"],
+  "low_level_keywords": ["BSER561", "BSER 561"]
+}
+#############################""",
 ]
 
 PROMPTS["naive_rag_response"] = """---Role---
