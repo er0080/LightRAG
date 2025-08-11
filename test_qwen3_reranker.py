@@ -28,7 +28,7 @@ async def test_qwen3_reranker():
     print()
     
     # Test configuration (modify these for your setup)
-    base_url = os.getenv("QWEN3_BASE_URL", "http://localhost:8000/v1/score")
+    base_url = os.getenv("QWEN3_BASE_URL", "http://localhost:8000/rerank")
     api_key = os.getenv("QWEN3_API_KEY", None)  # Optional
     model = os.getenv("QWEN3_MODEL", "Qwen/Qwen3-Reranker-0.6B")
     
@@ -101,7 +101,7 @@ def test_environment_config():
     # Simulate environment variables that would be used by LightRAG server
     env_vars = {
         "RERANK_PROVIDER": "qwen3",
-        "RERANK_BINDING_HOST": "http://localhost:8000/v1/score",
+        "RERANK_BINDING_HOST": "http://localhost:8000/rerank",
         "RERANK_BINDING_API_KEY": "optional-api-key",
         "RERANK_MODEL": "Qwen/Qwen3-Reranker-0.6B",
         "QWEN3_RERANK_INSTRUCTION": "Given a web search query, retrieve relevant passages that answer the query"
@@ -113,7 +113,7 @@ def test_environment_config():
     
     print("\nTo use with LightRAG server, add these to your .env file:")
     print("  export RERANK_PROVIDER=qwen3")
-    print("  export RERANK_BINDING_HOST=http://your-vllm-server:8000/v1/score")
+    print("  export RERANK_BINDING_HOST=http://your-vllm-server:8000/rerank")
     print("  export RERANK_MODEL=Qwen/Qwen3-Reranker-0.6B")
     print("  # Optional: export RERANK_BINDING_API_KEY=your-api-key")
     print("  # Optional: export QWEN3_RERANK_INSTRUCTION='custom instruction'")
