@@ -290,15 +290,21 @@ async def qwen3_rerank(
 ) -> List[Dict[str, Any]]:
     """
     Rerank documents using Qwen3 Reranker via vLLM's OpenAI-compatible API.
+    
+    This implementation follows the vLLM documentation which requires manual formatting
+    of queries and documents using Qwen3's specific templates for optimal results.
+    Without proper template formatting, results may be almost random.
+    
+    The formatted query and documents are sent to the complete rerank endpoint URL.
 
     Args:
         query: The search query
         documents: List of documents to rerank
         model: Qwen3 reranker model name
         top_n: Number of top results to return
-        base_url: vLLM API endpoint (should end with /rerank)
+        base_url: Complete rerank endpoint URL (e.g., "http://localhost:8000/rerank")
         api_key: API key if required
-        instruction: The instruction for the reranking task (Note: Qwen3 reranker uses templates internally)
+        instruction: The instruction for the reranking task
         **kwargs: Additional parameters
 
     Returns:
@@ -316,34 +322,59 @@ async def qwen3_rerank(
             text = str(doc)
         prepared_docs.append(text)
 
+    # Qwen3 reranker templates from vLLM documentation
+    # These templates are REQUIRED for proper results according to vLLM docs
+    prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+    suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+    
+    query_template = "{prefix}<Instruct>: {instruction}\n<Query>: {query}\n"
+    document_template = "<Document>: {doc}{suffix}"
+    
+    # Format query using Qwen3 template
+    formatted_query = query_template.format(
+        prefix=prefix, 
+        instruction=instruction, 
+        query=query
+    )
+    
+    # Format documents using Qwen3 template
+    formatted_documents = [
+        document_template.format(doc=doc, suffix=suffix) 
+        for doc in prepared_docs
+    ]
+
     # Prepare request headers
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    # Prepare request data for vLLM's rerank endpoint
-    # Note: vLLM handles the Qwen3 prompt templates internally
-    data = {
+    # Use the complete rerank endpoint URL with template-formatted query and documents
+    # The template formatting is applied to the input texts before sending to the API
+    rerank_data = {
         "model": model,
-        "query": query,
-        "documents": prepared_docs,
+        "query": formatted_query,
+        "documents": formatted_documents,
         **kwargs
     }
-
+    
     # Add top_n if specified
     if top_n is not None:
-        data["top_n"] = top_n
-
+        rerank_data["top_n"] = top_n
+    
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(base_url, headers=headers, json=data) as response:
+            async with session.post(
+                base_url,
+                headers=headers,
+                json=rerank_data
+            ) as response:
                 if response.status != 200:
                     error_text = await response.text()
                     logger.error(f"Qwen3 rerank API error {response.status}: {error_text}")
                     return documents
-
+                
                 result = await response.json()
-
+                
                 # Extract scores from vLLM rerank response
                 # Expected format: {"results": [{"index": 0, "document": {"text": "..."}, "relevance_score": 0.95}]}
                 if "results" in result:
@@ -354,7 +385,11 @@ async def qwen3_rerank(
                             score = item["relevance_score"]
                             
                             if 0 <= doc_idx < len(documents):
-                                reranked_doc = documents[doc_idx].copy() if isinstance(documents[doc_idx], dict) else {"content": str(documents[doc_idx])}
+                                if isinstance(documents[doc_idx], dict):
+                                    reranked_doc = documents[doc_idx].copy()
+                                else:
+                                    reranked_doc = {"content": str(documents[doc_idx])}
+                                
                                 reranked_doc["rerank_score"] = score
                                 reranked_docs.append(reranked_doc)
                     
@@ -380,9 +415,9 @@ def create_qwen3_rerank_model(
     
     Args:
         model: Qwen3 reranker model name
-        base_url: vLLM API endpoint (should end with /rerank)
+        base_url: Complete rerank endpoint URL (e.g., "http://localhost:8000/rerank")
         api_key: API key if required
-        instruction: The instruction for the reranking task (Note: vLLM handles templates internally)
+        instruction: The instruction for the reranking task
         **kwargs: Additional parameters
     
     Returns:
